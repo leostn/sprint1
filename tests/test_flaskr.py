@@ -1,77 +1,108 @@
+# coding=utf-8
 import os
+import pytest
 import flaskr
 from flaskr import flaskr
-import unittest
 import tempfile
 
-class FlaskrTestCase(unittest.TestCase):
 
-    def setUp(self):
-        self.db_fd, flaskr.app.config['DATABASE'] = tempfile.mkstemp()
-        flaskr.app.config['TESTING'] = True
-        self.app = flaskr.app.test_client()
-        with flaskr.app.app_context():
-            flaskr.init_db()
-
-    def tearDown(self):
-        os.close(self.db_fd)
+@pytest.fixture
+def client(request):
+    db_fd, flaskr.app.config['DATABASE'] = tempfile.mkstemp()
+    flaskr.app.config['TESTING'] = True
+    client = flaskr.app.test_client()
+    with flaskr.app.app_context():
+        flaskr.init_db()
+    def teardown():
+        os.close(db_fd)
         os.unlink(flaskr.app.config['DATABASE'])
+    request.addfinalizer(teardown)
+    return client
 
-    def test_empty_db(self):
-        rv = self.app.get('/')
-        assert b'No entries here so far' in rv.data
 
-    def login(self, username, password):
-        self.app.get('/logout', follow_redirects=True)
-        return self.app.post('/login', data=dict(
-            username=username,
-            password=password
-        ), follow_redirects=True)
+def login(client, username, password):
+    return client.post('/login', data=dict(
+        username=username,
+        password=password
+    ), follow_redirects=True)
 
-    def register(self, username, email, password, password1):
-        self.app.get('/logout', follow_redirects=True)
-        return self.app.post('/register', data=dict(
-            username=username,
-            email=email,
-            password=password,
-            cfm_password=password1
-        ), follow_redirects=True)
 
-    def logout(self):
-        return self.app.get('/logout', follow_redirects=True)
+def logout(client):
+    return client.get('/logout', follow_redirects=True)
 
-    def test_register(self):
-        rv = self.register('admin', 'admin@admin.com', 'Admin111', 'Admin111')
-        assert b'You were successfully registered and have been logged in' in rv.data
-        rv = self.register('admin', 'admin@admin.com', 'Admin111', 'Admin111')
-        assert b'User already registered' in rv.data
-        rv = self.register('admin1', 'admin@admin.com', 'default', 'default')
-        assert b'Invalid password. Passwords must contain at least 8 characters, and at least one capital letter and number' in rv.data
-        rv = self.register('admin1', 'admin@admin.com', 'Defaultt', 'Defaultt')
-        assert b'Invalid password. Passwords must contain at least 8 characters, and at least one capital letter and number' in rv.data
-        rv = self.register('admin1', 'admin@admin.com', 'default1', 'default1')
-        assert b'Invalid password. Passwords must contain at least 8 characters, and at least one capital letter and number' in rv.data
-        rv = self.register('admin1', 'admin@admin.com', 'default', 'Default')
-        assert b'Passwords do not match' in rv.data
 
-    def test_login_logout(self):
-        rv = self.login('admin', 'Admin111')
-        assert b'You were logged in' in rv.data
-        rv = self.logout()
-        assert b'You were logged out' in rv.data
-        rv = self.login('adminx', 'default')
-        assert b'User not registered' in rv.data
-        rv = self.login('admin', 'defaultx')
+def test_empty_db(client):
+    rv = client.get('/')
+    if __name__ == '__main__':
+        assert b'Unbelievable. No watchlist created so far' in rv.data
+
+
+def test_login_logout(client):
+    rv = login(client, 'admin', 'default')
+    assert b'You were logged in' in rv.data
+    rv = logout(client)
+    assert b'You were logged out' in rv.data
+
+
+def test_login_incorrect_credentials(client):
+    with client as c:
+        rv = c.post('/login', data=dict(
+            username='admin',
+            password='test'
+        ), follow_redirects=False)
+    if __name__ == '__main__':
         assert b'Incorrect username or password' in rv.data
 
-    def test_messages(self):
-        rv = self.app.post('/add', data=dict(
-            title='<Hello>',
-            text='<strong>HTML</strong> allowed here'
-        ), follow_redirects=True)
-        assert b'No entries here so far' not in rv.data
-        assert b'&lt;Hello&gt;' in rv.data
-        assert b'<strong>HTML</strong> allowed here' in rv.data
 
-if __name__ == '__main__':
-    unittest.main()
+def test_register_login(client):
+    with client as c:
+        rv = login(client, 'admin', 'default')
+        assert b'You were logged in' in rv.data
+        rv = client.post('/register', data=dict(
+            username='Test',
+            password='Hema7067',
+            email='Test@yahoo.com',
+            cfm_password='Hema7067'
+        ), follow_redirects=True)
+        if __name__ == '__main__':
+            assert b'You were successfully registered and have been logged in' in rv.data
+
+
+def test_register_invalid_password(client):
+    rv = login(client, 'admin', 'default')
+    assert b'You were logged in' in rv.data
+    rv = client.post('/register', data=dict(
+        username='test',
+        password='test',
+        email='test@yahoo.com',
+        cfm_password='test'
+    ), follow_redirects=True)
+    if __name__ == '__main__':
+        assert b'Invalid password. Passwords must contain at least 8 characters, and at least one capital letter and number' in rv.data
+
+
+def test_register_password_match(client):
+    rv = login(client, 'admin', 'default')
+    assert b'You were logged in' in rv.data
+    rv = client.post('/register', data=dict(
+        username='Test',
+        password='Svalli30',
+        email='test@yahoo.com',
+        cfm_password='Svalli301'
+    ), follow_redirects=True)
+    if __name__ == '__main__':
+        assert b'Passwords do not match' in rv.data
+
+
+def test_registered_users(client):
+    rv = login(client, flaskr.app.config['USERNAME'],
+               flaskr.app.config['PASSWORD'])
+    assert b'You were logged in' in rv.data
+    rv = client.post('/register', data=dict(
+        username='Test1',
+        password='Hema7067',
+        email='test@yahoo.com',
+        cfm_password='Hema7067'
+    ), follow_redirects=True)
+    if __name__ == '__main__':
+        assert b'User already registered' in rv.data
